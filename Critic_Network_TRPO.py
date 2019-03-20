@@ -17,6 +17,7 @@ class Critic_Net():
         print("build " + self.name)
         self.inp = tf.placeholder(shape=[None, self.state_dim[0], self.state_dim[1], self.state_dim[2]],
                                   dtype=tf.float32)
+        self.action = tf.placeholder(dtype=tf.float32, shape=[None, self.action_dim.shape[0]])
 
         # self.inp_act = tf.concat([self.inp, self.action], 1)
         regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
@@ -41,28 +42,30 @@ class Critic_Net():
 
         pool = tf.contrib.layers.flatten(pool)
 
-        dense = tf.layers.dense(pool, 64, activation=tf.nn.relu)
+        dense = tf.layers.dense(pool, 62, activation=tf.nn.relu)
 
-        self.dropout = tf.layers.dropout(dense, rate=0.5)
-        self.outputs = tf.layers.dense(self.dropout, 1, activation=tf.nn.relu)
+        dense = tf.concat([dense, self.action], 1)
+
+        self.dropout = tf.layers.dropout(dense, rate=0.65)
+        self.outputs = tf.layers.dense(self.dropout, 1)
 
         self.y_ = tf.placeholder(shape=[None, 1], dtype=tf.float32)
 
         self.trainer = tf.train.AdamOptimizer(self.learning_rate)
 
         l2_loss = tf.losses.get_regularization_loss()
-        self.loss = tf.reduce_mean(tf.squared_difference(self.outputs, self.y_)) + l2_loss
+        self.loss = tf.losses.mean_squared_error(self.outputs, self.y_) + l2_loss
 
         self.net_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
 
         self.trainer = tf.train.AdamOptimizer(self.learning_rate)
-        self.loss = tf.reduce_mean(tf.squared_difference(self.outputs, self.y_))
+        self.loss = tf.losses.mean_squared_error(self.outputs, self.y_)
 
         self.step = self.trainer.minimize(self.loss)
 
         self.saver = tf.train.Saver()
 
-    def predict(self, sess, states):
+    def predict(self, sess, states, actions):
         """
         Args:
           sess: TensorFlow session
@@ -71,12 +74,12 @@ class Critic_Net():
           The prediction of the output tensor.
         """
 
-        feed = {self.inp: states}  # , self.action: actions
+        feed = {self.inp: states , self.action: actions}
         prediction = sess.run(self.outputs, feed)
 
         return prediction
 
-    def update(self, sess, states, targets, summary):  # after states actions
+    def update(self, sess, states, actions, targets, summary):  # after states actions
         """
         Updates the weights of the neural network, based on its targets, its
         predictions, its loss and its optimizer.
@@ -88,7 +91,7 @@ class Critic_Net():
           targets: [current_target] or targets of batch
         """
         return sess.run((self.loss, self.outputs, self.step),
-                        feed_dict={self.inp: states, self.y_: targets}) [0] # self.action: actions,
+                        feed_dict={self.inp: states, self.action: actions, self.y_: targets})[0]  # self.action: actions,
 
     def save(self, sess):
         self.saver.save(sess, "./Saved_models/model_" + self.name + ".ckpt")
@@ -105,23 +108,25 @@ class Critic_Target_Network(Critic_Net):
     it is always set to the values of its associate.
     """
 
-    def __init__(self, action_dim, name, action_bound, state_dim, learning_rate=0.001, tau=0.001):
+    def __init__(self, action_dim, name, action_bound, state_dim, critic, learning_rate=0.001,
+                 tau=0.001):  # modified line
         super().__init__(action_dim, name, action_bound, state_dim, learning_rate)
         self.tau = tau
-        self._associate = self._register_associate()
+        self.critic = critic  # added line
+        self._register_associate()  # modified line
 
+    # modified method
     def _register_associate(self):
+        self.init_target = [self.net_params[i].assign(self.critic.net_params[i]) for i in range(len(self.net_params))]
 
-        critic_vars = tf.trainable_variables("critic")  # "critic"
-        target_vars = tf.trainable_variables("critic_target")  # "critic_target"
+        self.update_target = [self.net_params[i].assign(
+            tf.scalar_mul(self.tau, self.critic.net_params[i]) + tf.scalar_mul(1. - self.tau, self.net_params[i])) for i
+                              in range(len(self.net_params))]
 
-        op_holder = []
-        for idx, var in enumerate(target_vars):  # // is to retun un integer
-            op_holder.append(var.assign(
-                (critic_vars[idx].value() * self.tau) + ((1 - self.tau) * var.value())))
-        # return target_vars.assign((critic_vars * self.tau )+((1 - self.tau) * target_vars))
-        return op_holder
+    # added method. Target network starts identical to original network
+    def init(self, sess):
+        sess.run(self.init_target)
 
+    # modified method
     def update(self, sess):
-        for op in self._associate:
-            sess.run(op)
+        sess.run(self.update_target)

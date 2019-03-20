@@ -5,11 +5,12 @@ import matplotlib.pyplot as plt
 from math import atan2, pi, sqrt
 import numpy as np
 from utility import Dist
-
+import cv2
+import random
 
 def imshow(res, img):
-    img = np.uint8(img)
-    img = img.reshape((res[0], res[1], 3))
+    # img = np.uint8(img)
+    # img = img.reshape((res[0], res[1], 3))
     # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     plt.axis("off")
@@ -26,7 +27,8 @@ class PioneerP3DX_interface:
         self.robot = "Pioneer_p3dx"
 
         self.clientID = vrep.simxStart('127.0.0.1', 19999, True, True, 5000, 5)  # Connect to V-REP
-
+        _, self.camera = vrep.simxGetObjectHandle(self.clientID, "Vision_sensor", vrep.simx_opmode_blocking)
+        self.getFirstCameraImage()
         if self.clientID != -1:
             print('Connected to remote API server')
 
@@ -101,7 +103,6 @@ class PioneerP3DX_interface:
             new[1] = -1.9
             change = True
         if change:
-            print("check position")
             angle = atan2(new[1] - position[1], new[0] - position[0])  # * 180 / pi
 
             self.rotate_to(angle)
@@ -116,7 +117,6 @@ class PioneerP3DX_interface:
         return vrep.simxGetObjectHandle(self.clientID, "Vision_sensor", vrep.simx_opmode_blocking)
 
     def getFirstCameraImage(self):
-        code, self.camera = self.getCameraHandle()
         return vrep.simxGetVisionSensorImage(self.clientID, self.camera, 0, vrep.simx_opmode_streaming)
 
     def streamCameraImage(self):
@@ -126,13 +126,18 @@ class PioneerP3DX_interface:
             _, res, img = vrep.simxGetVisionSensorImage(self.clientID, self.camera, 0, vrep.simx_opmode_oneshot)
 
     def getCameraImage(self):
-        self.getFirstCameraImage()
-        code, camera = vrep.simxGetObjectHandle(self.clientID, "Vision_sensor", vrep.simx_opmode_blocking)
-        code, res, img = vrep.simxGetVisionSensorImage(self.clientID, camera, 0, vrep.simx_opmode_streaming)
+        # self.getFirstCameraImage()
+        code, res, img = vrep.simxGetVisionSensorImage(self.clientID, self.camera, 0, vrep.simx_opmode_oneshot_wait)
+        # o = 0
+        # while code != 0:
+        #     code, res, img = vrep.simxGetVisionSensorImage(self.clientID, self.camera, 0, vrep.simx_opmode_buffer)
+        #     if o > 0:
+        #         print("error code to get image ", code, "iteration ", o)
+        #     o = o + 1
         img = np.uint8(img)
-        img = img / 255.0
+        # img = img / 255.0
         img = img.reshape((res[0], res[1], 3))
-        img = np.expand_dims(img, 0)
+        # img = np.expand_dims(img, 0)
         return code, res, img
 
     def move_right(self, velocity=0.8):
@@ -156,7 +161,7 @@ class PioneerP3DX_interface:
                                         vrep.simx_opmode_blocking)
         vrep.simxSetJointTargetVelocity(self.clientID, left_motor_handler, left_joint_velocity,
                                         vrep.simx_opmode_blocking)
-        time.sleep(1)
+        time.sleep(0.5)
         self.stop()
 
     def stop(self):
@@ -170,19 +175,19 @@ class PioneerP3DX_interface:
         angle = atan2(position[1] - cur_pos[1], position[0] - cur_pos[0])  # * 180 / pi
 
         initial_dist = Dist(cur_pos[0], position[0], cur_pos[1], position[1])
-        if initial_dist <= 0.08:
+        if initial_dist <= 0.2:
             return
-        self.getFirstCameraImage()
+        # self.getFirstCameraImage()
 
         self.rotate_to(angle)
 
         images = []
         cur_dist = initial_dist
-        while cur_dist > 0.1:
+        while cur_dist > 0.2:
 
             self.check_position(cur_pos)
-            _, res, img = self.getCameraImage()
-            images.append(img)
+            # _, res, img = self.getCameraImage()
+            # images.append(img)
             self.move_strait(3)
             cur_pos = self.getPosition()
             cur_dist = Dist(cur_pos[0], position[0], cur_pos[1], position[1])
@@ -190,10 +195,9 @@ class PioneerP3DX_interface:
                 angle = atan2(position[1] - cur_pos[1], position[0] - cur_pos[0])  # * 180 / pi
                 self.rotate_to(angle)
             initial_dist = cur_dist
-            time.sleep(0.05)
+            # time.sleep(0.05)
 
         self.stop()
-        print(np.array(images).shape)
 
     def rotate_to(self, angle):
 
@@ -239,3 +243,15 @@ def rubbish():
     # inter.setPosition(target)
 
     print(inter.getPosition())
+
+    inter = PioneerP3DX_interface()
+    _, res, img = inter.getCameraImage()
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    print(img.shape)
+    # inter.stop()
+    # img = img/255.0
+    plt.imshow(img, cmap="gray")
+    plt.show()
+
+
+# inter = PioneerP3DX_interface()

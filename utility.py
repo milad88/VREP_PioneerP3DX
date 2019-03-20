@@ -8,8 +8,11 @@ import itertools
 from math import sqrt
 EpisodeStats = namedtuple("Stats", ["episode_lengths", "episode_rewards"])
 batch_size = 32
-
-
+# print(np.multiply(0.5, [0.2, 0.0, 0.1]) + [1,2,2])
+# # print(np.multiply([0.2, 0.0, 0.1] , 2))
+# a = np.random.rand(2)
+# print(a)
+# print(a * 2 -1)
 def Dist(x1, x2, y1, y2):
     dx = x2 - x1
     dy = y2 - y1
@@ -28,9 +31,8 @@ def var_shape(x):
 
 def flatgrad(loss, var_list):
     grads = tf.gradients(loss, var_list)
-    grads = [0. + 1e-16 if g is None else g for g in grads]
-    grads = np.concatenate([np.reshape(grad, [np.size(v)]) for (v, grad) in zip(var_list, grads)], 0)
-    return grads
+    # grads = [1e-16 if g is None else g for g in grads]
+    return tf.concat([tf.reshape(g, [-1]) for g in grads], axis=0)
 
 
 def gauss_log_prob(mu, logstd, x):
@@ -149,21 +151,22 @@ class ReplayBuffer:
         self.position = (self.position + 1) % self.capacity
 
     def next_batch(self, batch_size):
-        print()
+
         self.capacity = batch_size * 4
         if batch_size >= len(self._data.states):
+            return np.array(self._data.states), np.array(self._data.actions), np.array(
+                self._data.next_states), np.array(self._data.rewards), np.array(self._data.dones)
 
-            return np.array(self._data.states)[0], np.array(self._data.actions)[0], np.array(
-                self._data.next_states)[0], np.array(self._data.rewards)[0], np.array(self._data.dones)[0]
-        batch_indices = np.random.choice(len(self._data.states), batch_size)
-        batch_states = np.array([self._data.states[i] for i in batch_indices])[0]
+        else:
+            batch_indices = np.random.choice(len(self._data.states), batch_size)
+            batch_states = np.array([self._data.states[i] for i in batch_indices])
 
-        batch_actions = np.array([self._data.actions[i] for i in batch_indices])[0]
-        batch_next_states = np.array([self._data.next_states[i] for i in batch_indices])[0]
-        batch_rewards = np.array([self._data.rewards[i] for i in batch_indices])[0]
-        batch_dones = np.array([self._data.dones[i] for i in batch_indices])[0]
+            batch_actions = np.array([self._data.actions[i] for i in batch_indices])
+            batch_next_states = np.array([self._data.next_states[i] for i in batch_indices])
+            batch_rewards = np.array([self._data.rewards[i] for i in batch_indices])
+            batch_dones = np.array([self._data.dones[i] for i in batch_indices])
 
-        return batch_states, batch_actions, batch_next_states, batch_rewards, batch_dones
+            return batch_states, batch_actions, batch_next_states, batch_rewards, batch_dones
 
     #        if self.transition_size() > 5*batch_size:
     #           self._data.states = self._data.states[-5*batch_size:]

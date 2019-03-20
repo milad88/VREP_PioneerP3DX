@@ -2,7 +2,7 @@ import gym
 from gym import spaces, logger
 from Pioneer_interface import PioneerP3DX_interface
 import numpy as np
-
+import random
 from utility import Dist
 
 
@@ -28,11 +28,20 @@ class PioneerP3DX(gym.Env):
             done = True
         return obs, reward, done, None
 
+    def get_random_position(self):
+        return [random.uniform(-1.0, 1.0), random.uniform(0.0, 1.5)]
+
+
     def reset(self):
-        return self.robot_interface.getCameraImage()[2]
+        self.robot_interface.move_to(self.get_random_position())
+        return self.getObservation()
+
+    def first_reset(self):
+        return self.getObservation()
+
 
     def getObservation(self):
-        return self.robot_interface.getCameraImage()[2]
+        return np.expand_dims(self.robot_interface.getCameraImage()[2], 0)
 
     def render(self, mode='human'):
         pass
