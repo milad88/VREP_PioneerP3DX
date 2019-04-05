@@ -94,7 +94,7 @@ class Critic_Net():
                         feed_dict={self.inp: states, self.action: actions, self.y_: targets})[0]  # self.action: actions,
 
     def save(self, sess):
-        self.saver.save(sess, "./Saved_models/model_" + self.name + ".ckpt")
+        self.saver.save(sess, "./Saved_models/model_" + self.name + ".ckpt", write_meta_graph=False)
         print(self.name + " saved")
 
     def load(self, sess):

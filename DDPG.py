@@ -5,6 +5,7 @@ from Critic_Network_DDPG import *
 from Actor_Network_DDPG import *
 import tensorflow as tf
 from PioneerP3DX_env import PioneerP3DX
+from Exploration_Noise import ExplorationNoise
 
 if __name__ == "__main__":
     print("start")
@@ -16,16 +17,22 @@ if __name__ == "__main__":
     action_bound = env.action_space.high[0]
     state_dim = env.observation_space.shape
     batch_size = 32
-    learning_rate = 0.0001
+    learning_rate = 0.1
     discount_factor = 0.98
-    num_episodes = 300
-    len_episode = 10
-    epsilon = 0.995
+    num_episodes = 500
+    len_episode = 15
+    epsilon = 0.9
     decay = 0.994
-    load = True
+    load = False
     save = True
     model_name = "Saved_models/DDPG/model"
 
+    # Ornstein-Uhlenbeck variables
+    OU_THETA = 0.15
+    OU_MU = 0.
+    OU_SIGMA = 0.3
+    # MAX_STEPS_EPISODE = 1000
+    EXPLORATION_TIME = int(0.75 * len_episode)
 
     # policies = [make_epsilon_greedy_decay_policy, make_epsilon_greedy_policy, make_ucb_policy]
 
@@ -35,7 +42,7 @@ if __name__ == "__main__":
         # name = policy.__name__  # No reason to save more than one from each policy atm
         with tf.variable_scope("actor"):
             actor = Actor_Net(action_dim, "actor", action_bound, state_dim,
-                              learning_rate=learning_rate, batch_size=batch_size)
+                              learning_rate=learning_rate , batch_size=batch_size)
 
         with tf.variable_scope("critic"):
             critic = Critic_Net(action_dim, "critic", action_bound, state_dim,
@@ -80,18 +87,22 @@ if __name__ == "__main__":
             g_r = 0
             i = 0
             done = False
+
+            noise = ExplorationNoise.ou_noise(OU_THETA, OU_MU, OU_SIGMA, len_episode)
+            noise = ExplorationNoise.exp_decay(noise, EXPLORATION_TIME)
+
             while i < len_episode and not done:
 
                 old_observation = observation
                 loss = []
-                action = actor.choose(sess, observation, epsilon)
+                action = actor.predict(sess, observation)[0] + noise[i]
 
-                observation, reward, done, info = env.step(action[0])
+                observation, reward, done, info = env.step(action)
 
-                buffer.add_transition(old_observation[0], action[0], observation[0], [reward], done)
+                buffer.add_transition(old_observation[0], action, observation[0], [reward], done)
                 s, a, ns, r, d = buffer.next_batch(batch_size)
 
-                acts = actor.choose(sess, ns, epsilon)
+                acts = actor.predict(sess, ns)
                 q_values = target_critic.predict(sess, ns, acts)
 
                 y = []
@@ -104,7 +115,11 @@ if __name__ == "__main__":
                     j += 1
                 g_r += reward
                 g_stat.append(np.round(g_r))
+                print("critic params")
+                # print(sess.run(critic.net_params[1]))
+
                 loss_critic = critic.update(sess, s, a, y, None)
+                # print(sess.run(critic.net_params[1]))
 
                 loss.append(loss_critic[1])
                 #target_critic_out = target_critic.predict(sess,s,a)
@@ -113,7 +128,10 @@ if __name__ == "__main__":
                 print("\rGradient {} action {} reward {}".format(a_grads[0], action, reward))
                 sys.stdout.flush()
                 #actor.update(sess, s, target_critic_out, None)
+
                 actor.update(sess, s, a_grads, None)
+
+                # print(sess.run(actor.net_params[0][0][0][0]))
 
                 stats.episode_rewards[i_episode] += reward
 

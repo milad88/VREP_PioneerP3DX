@@ -28,27 +28,27 @@ class Actor_Net():
         # self.inp = tf.placeholder(shape=self.state_dim, dtype=tf.float32)
         self.conv = tf.layers.conv2d(
             inputs=self.inp,
-            filters=32,
-            kernel_size=[5, 5],
+            filters=16,
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer)
-        self.pool = tf.layers.max_pooling2d(inputs=self.conv, pool_size=[2, 2], strides=2)
-        self.norm = tf.layers.batch_normalization(self.pool)
+        # self.pool = tf.layers.max_pooling2d(inputs=self.conv, pool_size=[2, 2], strides=2)
+        self.norm = tf.layers.batch_normalization(self.conv)
         self.conv1 = tf.layers.conv2d(
             inputs=self.norm,
             filters=16,
-            kernel_size=[5, 5],
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer)
 
-        self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[2, 2], strides=2)
-        self.norm1 = tf.layers.batch_normalization(self.pool1)
+        # self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[2, 2], strides=2)
+        self.norm1 = tf.layers.batch_normalization(self.conv1)
 
-        self.flat = tf.contrib.layers.flatten(self.pool1)
+        self.flat = tf.contrib.layers.flatten(self.norm1)
 
-        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.relu)
+        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.tanh)
 
         self.dropout = tf.layers.dropout(self.dense, rate=0.65)
         self.output = tf.layers.dense(self.dropout, self.action_dim.shape[0], activation=tf.nn.tanh)

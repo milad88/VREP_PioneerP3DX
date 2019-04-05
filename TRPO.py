@@ -6,7 +6,7 @@ from Actor_Network_TRPO import *
 import tensorflow as tf
 from Pioneer_interface import imshow
 from PioneerP3DX_env import PioneerP3DX
-
+from Exploration_Noise import ExplorationNoise
 
 if __name__ == "__main__":
     print("start")
@@ -18,14 +18,21 @@ if __name__ == "__main__":
     action_bound = env.action_space.high[0]
     state_dim = env.observation_space.shape
     batch_size = 32
-    learning_rate = 0.0001
+    learning_rate = 0.01
     discount_factor = 0.98
-    num_episodes = 3 #the one we need
-    len_episode = 2
+    num_episodes = 500 #the one we need
+    len_episode = 15
     epsilon = 0.1
-    load = False
-    save = False
+    load = True
+    save = True
     model_name = "Saved_models/TROP/model"
+
+    # Ornstein-Uhlenbeck variables
+    OU_THETA = 0.15
+    OU_MU = 0.
+    OU_SIGMA = 0.3
+    # MAX_STEPS_EPISODE = 1000
+    EXPLORATION_TIME = int(0.75 * len_episode)
 
     g_stat = []
 
@@ -54,6 +61,7 @@ if __name__ == "__main__":
                                                   learning_rate=learning_rate)
 
         print("networks built.")
+        # sess.run(tf.global_variables_initializer())
 
         if load:
             print("loading networks parameters....")
@@ -83,16 +91,19 @@ if __name__ == "__main__":
             g_r = 0
             i = 0
 
+            noise = ExplorationNoise.ou_noise(OU_THETA, OU_MU, OU_SIGMA, len_episode)
+            noise = ExplorationNoise.exp_decay(noise, EXPLORATION_TIME)
+
             while i < len_episode and not done:
                 loss = []
 
                 old_observation = observation
-                action = actor.predict(sess, observation)
+                action = actor.predict(sess, observation) [0] + noise[i]
 
-                observation, reward, done, info = env.step(action[0])
+                observation, reward, done, info = env.step(action)
                 print("\rEpisode {}/{} ({}) action {} ".format(i_episode + 1, num_episodes, last_reward, action))
 
-                buffer.add_transition(old_observation[0], action[0], observation[0], [reward], done)
+                buffer.add_transition(old_observation[0], action, observation[0], [reward], done)
                 s, a, ns, r, d = buffer.next_batch(batch_size)
 
                 acts = target_actor.predict(sess, ns)
@@ -127,11 +138,17 @@ if __name__ == "__main__":
             stats.episode_lengths[i_episode] = i
             observation = env.reset()
 
+            if (i_episode + 1) % 30 == 0:
+                actor.save(sess)
+                critic.save(sess)
+                target_actor.save(sess)
+                target_critic.save(sess)
+
         plot_episode_stats(stats)
         plot_stats(loss_episodes)
 
         if save:
             actor.save(sess)
             critic.save(sess)
-            # target_actor.save(sess)
-            # target_critic.save(sess)
+            target_actor.save(sess)
+            target_critic.save(sess)

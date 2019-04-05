@@ -25,8 +25,8 @@ class Critic_Net():
 
         conv = tf.layers.conv2d(
             inputs=self.inp,
-            filters=32,
-            kernel_size=[5, 5],
+            filters=16,
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer)
@@ -35,7 +35,7 @@ class Critic_Net():
         conv = tf.layers.conv2d(
             inputs=pool,
             filters=16,
-            kernel_size=[5, 5],
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer)
@@ -45,10 +45,10 @@ class Critic_Net():
 
         pool = tf.contrib.layers.flatten(norm1)
 
-        dense = tf.layers.dense(pool, 62, activation=tf.nn.relu)
+        dense = tf.layers.dense(pool, 62, activation=tf.nn.tanh)
         dense = tf.concat([dense, self.action], 1)
 
-        self.dropout = tf.layers.dropout(dense, rate=0.7)
+        self.dropout = tf.layers.dropout(dense, rate=0.5)
         self.dense = tf.layers.dense(self.dropout, 1)  # no activation
 
         self.y_ = tf.placeholder(shape=[None, 1], dtype=tf.float32)
@@ -56,7 +56,7 @@ class Critic_Net():
         self.trainer = tf.train.AdamOptimizer(self.learning_rate)
 
         l2_loss = tf.losses.get_regularization_loss()
-        self.loss = tf.losses.mean_squared_error(self.dense, self.y_)  + l2_loss
+        self.loss = tf.losses.mean_squared_error(self.dense, self.y_) + l2_loss
 
         self.step = self.trainer.minimize(self.loss)
         self.net_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
@@ -148,7 +148,7 @@ class Critic_Target_Network(Critic_Net):
 
         self.update_target = [self.net_params[i].assign(
             tf.scalar_mul(self.tau, self.critic.net_params[i]) + tf.scalar_mul(1. - self.tau, self.net_params[i])) for i
-                              in range(len(self.net_params))]
+            in range(len(self.net_params))]
 
     # added method. Target network starts identical to original network
     def init(self, sess):

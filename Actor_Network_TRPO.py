@@ -1,4 +1,6 @@
 from utility import *
+import tensorflow.contrib.slim as slim
+
 action_bound = 2.0
 import random
 
@@ -26,39 +28,40 @@ class Actor_Net():
 
         self.conv = tf.layers.conv2d(
             inputs=self.inp,
-            filters=32,
-            kernel_size=[5, 5],
+            filters=16,
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer,
             name="conv_1")
-        self.pool = tf.layers.max_pooling2d(inputs=self.conv, pool_size=[2, 2], strides=2, name="pool_1")
-        self.norm = tf.layers.batch_normalization(self.pool,name="batch_norm_1")
+        # self.pool = tf.layers.max_pooling2d(inputs=self.conv, pool_size=[2, 2], strides=2, name="pool_1")
+        # self.norm = tf.layers.batch_normalization(self.pool, name="batch_norm_1")
         self.conv1 = tf.layers.conv2d(
-            inputs=self.norm,
-            filters=16,
-            kernel_size=[5, 5],
+            inputs=self.conv,
+            filters=8,
+            kernel_size=[3, 3],
             padding="same",
             activation=tf.nn.relu,
             kernel_regularizer=regularizer, name="conv_2")
 
-        self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[2, 2], strides=2, name="pool_2")
+        # self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[2, 2], strides=2, name="pool_2")
 
-        self.flat = tf.contrib.layers.flatten(self.pool1)
+        self.flat = tf.contrib.layers.flatten(self.conv1)
 
-        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.relu,  name="dense_1")
-        self.dense2 = tf.layers.dense(self.flat, 64, activation=tf.nn.relu, name="dense_2")
+        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.relu, name="dense_1")
+        # self.dense2 = tf.layers.dense(self.flat, 64, activation=tf.nn.relu, name="dense_2")
         self.dropout = tf.layers.dropout(self.dense, rate=0.5, name="dropout_1")
-        self.dropout2 = tf.layers.dropout(self.dense2, rate=0.5,  name="dropout_2")
+        # self.dropout2 = tf.layers.dropout(self.dense2, rate=0.5,  name="dropout_2")
         self.mean = tf.scalar_mul(self.action_bound,
                                   tf.layers.dense(self.dropout, self.action_dim.shape[0], activation=tf.nn.tanh))
-        self.sigma = tf.layers.dense(self.dropout2, 1, activation=tf.nn.relu)
+        # self.sigma = tf.layers.dense(self.dropout, 1, activation=tf.nn.relu)
 
         l2_loss = tf.losses.get_regularization_loss()
 
-        self.sigma = tf.clip_by_value(t=self.sigma,
-                                      clip_value_min=0,
-                                      clip_value_max=tf.sqrt(self.action_bound))
+        # self.sigma = tf.clip_by_value(t=self.sigma,
+        #                               clip_value_min=0,
+        #                               clip_value_max=tf.sqrt(self.action_bound))
+        self.sigma = tf.constant(1.)
         self.dist = tf.distributions.Normal(self.mean, self.sigma)
         self.scaled_out = self.dist.sample()
         self.net_params = tf.trainable_variables(scope=self.name)
@@ -69,10 +72,12 @@ class Actor_Net():
 
         # self.prev_scaled_out = self.prev_dist.sample()
 
-        self.cost = tf.reduce_mean(tf.distributions.kl_divergence(self.dist, self.prev_dist, allow_nan_stats=True) * self.advantage)
+        self.cost = tf.reduce_mean(
+            tf.distributions.kl_divergence(self.dist, self.prev_dist, allow_nan_stats=False) * self.advantage)
         # self.actor_gradients = [tf.multiply(grad, 1/self.batch_size) for grad in tf.gradients(ys=self.output, xs=self.net_params, grad_ys=-self.action_gradients)]
 
-        self.grads = [tf.multiply(grad, 1/self.batch_size) for grad in tf.gradients(self.cost, self.net_params, gate_gradients=True)]
+        self.grads = [tf.multiply(grad, 1 / self.batch_size) for grad in
+                      tf.gradients(self.cost, self.net_params, gate_gradients=False)]
         self.shapes = [v.shape.as_list() for v in self.net_params]
 
         self.p = tf.placeholder(tf.float32, name="p")
@@ -90,6 +95,11 @@ class Actor_Net():
 
         self.hvp = flatgrad(self.gvp, self.net_params)
 
+        def model_summary():
+            # model_vars = tf.trainable_variables()
+            slim.model_analyzer.analyze_vars(self.net_params, print_info=True)
+
+        model_summary()
         self.saver = tf.train.Saver()
 
     def choose(self, sess, states, epsilon):
@@ -103,8 +113,9 @@ class Actor_Net():
 
         feed = {self.inp: states}
         a = sess.run(self.output, feed)
-        if random.random()<epsilon:
-            return np.minimum(np.maximum(a[0]+np.random.rand(2)*0.1-0.05,np.asarray([-1.0,-1.0])),np.asarray([1.0,1.0]))
+        if random.random() < epsilon:
+            return np.minimum(np.maximum(a[0] + np.random.rand(2) * 0.1 - 0.05, np.asarray([-1.0, -1.0])),
+                              np.asarray([1.0, 1.0]))
         else:
             return a[0]
 
@@ -112,13 +123,14 @@ class Actor_Net():
         p = b.copy()
         r = b.copy()
         x = np.zeros_like(b)
-        rdotr = r * r
+        rdotr = np.dot(r, r)
         for i in range(cg_iters):
             z = f_Ax(p)
-            v = rdotr / p.dot(z)  # p.dot(z)  # stepdir size?? =ak of wikipedia
-            x += np.dot(v, p)
+            y = np.dot(p, z) + 1e-16
+            v = rdotr / y  # p.dot(z)  # stepdir size?? =ak of wikipedia
+            x += v * p
             # x += v * p  # new parameters??
-            r -= z.dot(v)  # new gradient??
+            r -= z * v  # new gradient??
             newrdotr = np.dot(r, r)  #
             mu = newrdotr / rdotr  # Bi of wikipedia
             rdotr = newrdotr
@@ -130,7 +142,7 @@ class Actor_Net():
         return x
 
     def save(self, sess):
-        self.saver.save(sess, "./Saved_models/model_" + self.name + ".ckpt")
+        self.saver.save(sess, "./Saved_models/model_" + self.name + ".ckpt", write_meta_graph=False)
         print(self.name + " saved")
 
     def load(self, sess):
@@ -145,11 +157,12 @@ class Actor_Net():
         :param expected_improve_rate:
         :return:
         '''
+
+        # stepsize = self.linesearch(loss, net, self.stepdir,
+        #                            self.cg.dot(self.stepdir))
         j = max_iter
         accept_ratio = .1
         max_backtracks = 10
-        print("fullstep")
-        print(fullstepdir)
         fval = f(x)
         for (_n_backtracks, stepdirfrac) in enumerate(.5 ** np.arange(max_backtracks)):
             j -= 1
@@ -192,12 +205,14 @@ class Actor_Net():
                      self.advantage: advantages, self.p: None}
 
         self.prev_mean, self.prev_sigma, _, cost, net, grads = sess.run(
-            (self.mean, self.sigma, self.scaled_out, self.cost, self.net_params, self.grads), feed_dict) # cost and gradient are fine
+            (self.mean, self.sigma, self.scaled_out, self.cost, self.net_params, self.grads),
+            feed_dict)  # cost and gradient are fine
         # for g in grads:
 
         # grads = tf.where(tf.is_nan(grads), tf.zeros_like(has_nans), has_nans).eval())
         i = 0
         for g in grads:
+            # print(g)
             g = np.where(np.isnan(g), 0.0, g)
             grads[i] = g
             i += 1
@@ -206,10 +221,8 @@ class Actor_Net():
         def get_hvp(p):
             feed_dict[self.p] = p  # np.reshape(p, [np.size(p),1])
             a = sess.run(self.hvp, feed_dict)
-            print("ppppppppppppppp")
-            print(p)
-            print("gradiensasassss")
-            print(a)
+            # print("ppppppppppppppp")
+            # print(p)
             a = a + 1e-3 * p
             return a
             # gvp = sess.run(self.gvp, feed_dict)
@@ -236,14 +249,14 @@ class Actor_Net():
         # grads = np.where(np.isnan(grads), 1e-3, np.array(grads))
         # grads = np.array(grads[0])
         self.cg = self.conjugate_gradient(get_hvp, -grads)
-        print("coniugate gradient")
-        print(self.cg)
+        print("coniugate gradient [0]")
+        print(self.cg[0])
         delta = 0.5 * self.cg * get_hvp(self.cg)
         prev_params = self.net_params
 
-        self.stepdir = np.sqrt(2 * self.learning_rate / ((np.transpose(grads) * self.cg) + 1e-16)) * self.cg
-        print("stepdire")
-        print(self.stepdir)
+        self.stepdir = np.dot(np.sqrt(2 * self.learning_rate / (np.dot(grads, self.cg) + 1e-16)) , self.cg)
+        print("stepdire [0]")
+        print(self.stepdir[0])
 
         def loss(th):
             start = 0
@@ -256,9 +269,9 @@ class Actor_Net():
 
             return cost
 
+        exp_improve_rate = self.cg.dot(self.stepdir)
 
-        stepsize = self.linesearch(loss, net, self.stepdir,
-                                   self.cg.dot(self.stepdir))
+        stepsize = self.linesearch(loss, net, self.stepdir, exp_improve_rate)
         i = 0
         start = 0
         for (shape, v) in zip(self.shapes, self.net_params):
@@ -274,28 +287,29 @@ class Actor_Target_Network(Actor_Net):
     it is always set to the values of its associate.
     """
 
-
-    def __init__(self, action_dim, name, action_bound, state_dim, actor, learning_rate=0.001, tau=0.001): #modified line
+    def __init__(self, action_dim, name, action_bound, state_dim, actor, learning_rate=0.001,
+                 tau=0.001):  # modified line
         super().__init__(action_dim, name, action_bound, state_dim, learning_rate)
         # self._build_model( num_actions, action_dim, name, action_bound, state_dim)
         self.tau = tau
-        self.actor = actor #added line
-        self._register_associate() #modified line
+        self.actor = actor  # added line
+        self._register_associate()  # modified line
 
-    #modified method
+    # modified method
     def _register_associate(self):
         self.init_target = [self.net_params[i].assign(self.actor.net_params[i]) for i in range(len(self.net_params))]
 
-        self.update_target = [self.net_params[i].assign(tf.scalar_mul(self.tau, self.actor.net_params[i]) + tf.scalar_mul(1. - self.tau, self.net_params[i])) for i in range(len(self.net_params))]
+        self.update_target = [self.net_params[i].assign(
+            tf.scalar_mul(self.tau, self.actor.net_params[i]) + tf.scalar_mul(1. - self.tau, self.net_params[i])) for i
+            in range(len(self.net_params))]
 
-    #added method. Target network starts identical to original network
+    # added method. Target network starts identical to original network
     def init(self, sess):
         sess.run(self.init_target)
 
-    #modified method
+    # modified method
     def update(self, sess):
         sess.run(self.update_target)
-
 
     def get_old_mean_and_sigma(self):
         return self.old_mean, self.old_sigma
