@@ -23,7 +23,7 @@ if __name__ == "__main__":
     num_episodes = 500 #the one we need
     len_episode = 15
     epsilon = 0.1
-    load = True
+    load = False
     save = True
     model_name = "Saved_models/TROP/model"
 
@@ -101,8 +101,8 @@ if __name__ == "__main__":
                 action = actor.predict(sess, observation) [0] + noise[i]
 
                 observation, reward, done, info = env.step(action)
-                print("\rEpisode {}/{} ({}) action {} ".format(i_episode + 1, num_episodes, last_reward, action))
-
+                print("\rEpisode {}/{} ({}) action {} ".format(i_episode + 1, num_episodes, reward, action))
+                sys.stdout.flush()
                 buffer.add_transition(old_observation[0], action, observation[0], [reward], done)
                 s, a, ns, r, d = buffer.next_batch(batch_size)
 
@@ -129,9 +129,9 @@ if __name__ == "__main__":
                 g_stat.append(int(np.round(g_r)))
                 i += 1
 
-                print(i, " episode is done")
 
                 first = False
+            # print(i_episode, " episode is done")
 
             loss_episodes.append(sum(loss))
 

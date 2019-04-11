@@ -17,7 +17,7 @@ if __name__ == "__main__":
     action_bound = env.action_space.high[0]
     state_dim = env.observation_space.shape
     batch_size = 32
-    learning_rate = 0.1
+    learning_rate = 0.01
     discount_factor = 0.98
     num_episodes = 500
     len_episode = 15
@@ -98,7 +98,6 @@ if __name__ == "__main__":
                 action = actor.predict(sess, observation)[0] + noise[i]
 
                 observation, reward, done, info = env.step(action)
-
                 buffer.add_transition(old_observation[0], action, observation[0], [reward], done)
                 s, a, ns, r, d = buffer.next_batch(batch_size)
 
@@ -115,7 +114,7 @@ if __name__ == "__main__":
                     j += 1
                 g_r += reward
                 g_stat.append(np.round(g_r))
-                print("critic params")
+                # print("critic params")
                 # print(sess.run(critic.net_params[1]))
 
                 loss_critic = critic.update(sess, s, a, y, None)
@@ -159,7 +158,8 @@ if __name__ == "__main__":
                 critic.save(sess)
                 target_actor.save(sess)
                 target_critic.save(sess)
-
+            print("net params")
+            print(sess.run(critic.net_params)[0][0][0])
         plot_episode_stats(stats)
         plot_stats(loss_episodes)
         if save:

@@ -1,6 +1,5 @@
 from utility import *
 import tensorflow.contrib.slim as slim
-
 action_bound = 2.0
 import random
 
@@ -48,7 +47,7 @@ class Actor_Net():
 
         self.flat = tf.contrib.layers.flatten(self.conv1)
 
-        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.relu, name="dense_1")
+        self.dense = tf.layers.dense(self.flat, 32, activation=tf.nn.relu, name="dense_1")
         # self.dense2 = tf.layers.dense(self.flat, 64, activation=tf.nn.relu, name="dense_2")
         self.dropout = tf.layers.dropout(self.dense, rate=0.5, name="dropout_1")
         # self.dropout2 = tf.layers.dropout(self.dense2, rate=0.5,  name="dropout_2")
@@ -62,20 +61,18 @@ class Actor_Net():
         #                               clip_value_min=0,
         #                               clip_value_max=tf.sqrt(self.action_bound))
         self.sigma = tf.constant(1.)
-        self.dist = tf.distributions.Normal(self.mean, self.sigma)
+        self.dist = tf.distributions.Normal(self.mean, self.sigma, allow_nan_stats=False)
         self.scaled_out = self.dist.sample()
         self.net_params = tf.trainable_variables(scope=self.name)
 
         self.prev_mean = 0.
         self.prev_sigma = 1.
-        self.prev_dist = tf.distributions.Normal(self.prev_mean, self.prev_sigma)
+        self.prev_dist = tf.distributions.Normal(self.prev_mean, self.prev_sigma, allow_nan_stats=False)
 
         # self.prev_scaled_out = self.prev_dist.sample()
 
-        self.cost = tf.reduce_mean(
-            tf.distributions.kl_divergence(self.dist, self.prev_dist, allow_nan_stats=False) * self.advantage)
-        # self.actor_gradients = [tf.multiply(grad, 1/self.batch_size) for grad in tf.gradients(ys=self.output, xs=self.net_params, grad_ys=-self.action_gradients)]
-
+        self.cost = tf.reduce_mean(tf.distributions.kl_divergence(self.dist, self.prev_dist, allow_nan_stats=True) * self.advantage) + l2_loss
+        # self.cost = tf.reduce_sum(self.dist * tf.log(self.dist/self.prev_dist))
         self.grads = [tf.multiply(grad, 1 / self.batch_size) for grad in
                       tf.gradients(self.cost, self.net_params, gate_gradients=False)]
         self.shapes = [v.shape.as_list() for v in self.net_params]
@@ -99,7 +96,7 @@ class Actor_Net():
             # model_vars = tf.trainable_variables()
             slim.model_analyzer.analyze_vars(self.net_params, print_info=True)
 
-        model_summary()
+        # model_summary()
         self.saver = tf.train.Saver()
 
     def choose(self, sess, states, epsilon):
@@ -171,7 +168,8 @@ class Actor_Net():
             actual_improve = fval - newfval
             expected_improve = expected_improve_rate * stepdirfrac
             ratio = actual_improve / expected_improve
-            if ratio > accept_ratio and actual_improve > 0 or j == 0:
+
+            if ratio.eval() > accept_ratio and actual_improve > 0 or j == 0:
                 return xnew
 
         return x
@@ -207,6 +205,8 @@ class Actor_Net():
         self.prev_mean, self.prev_sigma, _, cost, net, grads = sess.run(
             (self.mean, self.sigma, self.scaled_out, self.cost, self.net_params, self.grads),
             feed_dict)  # cost and gradient are fine
+        self.prev_dist = tf.distributions.Normal(self.prev_mean, self.prev_sigma, allow_nan_stats=False)
+
         # for g in grads:
 
         # grads = tf.where(tf.is_nan(grads), tf.zeros_like(has_nans), has_nans).eval())
@@ -249,36 +249,41 @@ class Actor_Net():
         # grads = np.where(np.isnan(grads), 1e-3, np.array(grads))
         # grads = np.array(grads[0])
         self.cg = self.conjugate_gradient(get_hvp, -grads)
-        print("coniugate gradient [0]")
-        print(self.cg[0])
-        delta = 0.5 * self.cg * get_hvp(self.cg)
-        prev_params = self.net_params
+        # print("coniugate gradient [0]")
+        # print(self.cg[0])
+        delta = tf.reduce_sum(0.5 * self.cg * get_hvp(self.cg),0, keep_dims=True)
+        scale_ratio = tf.sqrt(delta/0.01) # 0.01 max kl divergence
 
-        self.stepdir = np.dot(np.sqrt(2 * self.learning_rate / (np.dot(grads, self.cg) + 1e-16)) , self.cg)
-        print("stepdire [0]")
-        print(self.stepdir[0])
+        final_nature_grad = self.cg / scale_ratio[0]
+
+        expected_improve = tf.reduce_sum(-grads * self.cg, 0, keep_dims=True) / scale_ratio[0]
+
+        # prev_params = self.net_params
+
+        # self.stepdir = np.dot(np.sqrt(2 * self.learning_rate / (np.dot(grads, self.cg) + 1e-16)) , self.cg)
+
 
         def loss(th):
             start = 0
             for i, shape in enumerate(self.shapes):
                 size = np.prod(shape)
-                self.net_params[i] = tf.reshape(th[start:start + size], shape)
+                sess.run(tf.assign(tf.trainable_variables(scope=self.name)[i], tf.reshape(th[start:start + size], shape)))
                 start += size
             self.prev_mean, self.prev_sigma, _, cost = sess.run(
                 (self.mean, self.sigma, self.scaled_out, self.cost), feed_dict)
 
             return cost
 
-        exp_improve_rate = self.cg.dot(self.stepdir)
+        # exp_improve_rate = self.cg.dot(self.stepdir)
 
-        stepsize = self.linesearch(loss, net, self.stepdir, exp_improve_rate)
-        i = 0
-        start = 0
-        for (shape, v) in zip(self.shapes, self.net_params):
-            size = np.prod(shape)
-            self.net_params[i] = prev_params[i] + tf.reshape(stepsize[start:start + size], shape)
-            start += size
-            i += 1
+        stepsize = self.linesearch(loss, net, final_nature_grad, expected_improve)
+        # i = 0
+        # start = 0
+        # for (shape, v) in zip(self.shapes, self.net_params):
+        #     size = np.prod(shape)
+        #     self.net_params[i] = prev_params[i] + tf.reshape(stepsize[start:start + size], shape)
+        #     start += size
+        #     i += 1
 
 
 class Actor_Target_Network(Actor_Net):

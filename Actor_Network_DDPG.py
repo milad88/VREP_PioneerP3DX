@@ -40,18 +40,21 @@ class Actor_Net():
             filters=16,
             kernel_size=[3, 3],
             padding="same",
-            activation=tf.nn.relu,
+            activation=tf.nn.sigmoid,
             kernel_regularizer=regularizer)
 
-        # self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[2, 2], strides=2)
-        self.norm1 = tf.layers.batch_normalization(self.conv1)
+        self.pool1 = tf.layers.max_pooling2d(inputs=self.conv1, pool_size=[3, 3], strides=2)
 
-        self.flat = tf.contrib.layers.flatten(self.norm1)
+        self.flat = tf.contrib.layers.flatten(self.pool1)
 
-        self.dense = tf.layers.dense(self.flat, 64, activation=tf.nn.tanh)
+        self.dense = tf.layers.dense(self.flat, 32, activation=tf.nn.sigmoid)
+        self.dropout = tf.layers.dropout(self.dense, rate=0.5)
 
-        self.dropout = tf.layers.dropout(self.dense, rate=0.65)
-        self.output = tf.layers.dense(self.dropout, self.action_dim.shape[0], activation=tf.nn.tanh)
+        self.dense2 = tf.layers.dense(self.dropout, 8, activation=tf.nn.sigmoid)
+        self.norm1 = tf.layers.batch_normalization(self.dense2)
+        self.dropout2 = tf.layers.dropout(self.norm1, rate=0.5)
+
+        self.output = tf.layers.dense(self.dropout2, self.action_dim.shape[0], activation=tf.nn.tanh)
 
         self.scaled_outputs = self.output
         # self.scaled_outputs = tf.scalar_mul(action_bound, self.output)
@@ -64,7 +67,7 @@ class Actor_Net():
         # inv_batch_size = 1/self.batch_size
         # inv_batch_size = tf.constant(1/self.batch_size, dtype=tf.float32)
         self.actor_gradients = tf.gradients(ys=self.output, xs=self.net_params, grad_ys=-self.action_gradients)
-        self.optimize = tf.train.AdamOptimizer(self.learning_rate/ self.batch_size).apply_gradients(
+        self.optimize = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(
             zip(self.actor_gradients, self.net_params))
 
         self.saver = tf.train.Saver()

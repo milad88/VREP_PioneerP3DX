@@ -135,7 +135,7 @@ class PioneerP3DX_interface:
         #         print("error code to get image ", code, "iteration ", o)
         #     o = o + 1
         img = np.uint8(img)
-        # img = img / 255.0
+        img = img / 255.0
         img = img.reshape((res[0], res[1], 3))
         # img = np.expand_dims(img, 0)
         return code, res, img
@@ -204,11 +204,11 @@ class PioneerP3DX_interface:
         orient = self.getOrientation()
         while abs(orient[2] - angle) > 0.05:
             if (orient[2] - angle) > 0:
-                self.move_right(0.4)
-                self.move_left(velocity=-0.4)
+                self.move_right(0.6)
+                self.move_left(velocity=-0.6)
             else:
-                self.move_left(0.4)
-                self.move_right(velocity=-0.4)
+                self.move_left(0.6)
+                self.move_right(velocity=-0.6)
             orient = self.getOrientation()
         self.stop()
 

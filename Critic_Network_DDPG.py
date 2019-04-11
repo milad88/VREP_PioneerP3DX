@@ -21,7 +21,7 @@ class Critic_Net():
                                   dtype=tf.float32)
 
         # self.inp_act = tf.concat([self.inp, self.action], 1)
-        regularizer = tf.contrib.layers.l2_regularizer(scale=0.01)
+        regularizer = tf.contrib.layers.l2_regularizer(scale=0.1)
 
         conv = tf.layers.conv2d(
             inputs=self.inp,
@@ -45,7 +45,7 @@ class Critic_Net():
 
         pool = tf.contrib.layers.flatten(norm1)
 
-        dense = tf.layers.dense(pool, 62, activation=tf.nn.tanh)
+        dense = tf.layers.dense(pool, 30, activation=tf.nn.tanh)
         dense = tf.concat([dense, self.action], 1)
 
         self.dropout = tf.layers.dropout(dense, rate=0.5)
@@ -53,14 +53,14 @@ class Critic_Net():
 
         self.y_ = tf.placeholder(shape=[None, 1], dtype=tf.float32)
 
-        self.trainer = tf.train.AdamOptimizer(self.learning_rate)
+        self.trainer = tf.train.GradientDescentOptimizer(self.learning_rate)
 
         l2_loss = tf.losses.get_regularization_loss()
         self.loss = tf.losses.mean_squared_error(self.dense, self.y_) + l2_loss
 
         self.step = self.trainer.minimize(self.loss)
         self.net_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
-        self.action_grads = [tf.multiply(grad, 1 / self.batch_size) for grad in tf.gradients(self.dense, self.action)]
+        self.action_grads = tf.gradients(self.dense, self.action, gate_gradients=True)
 
         self.saver = tf.train.Saver()
 
